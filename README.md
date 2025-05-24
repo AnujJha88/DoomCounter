@@ -80,8 +80,63 @@ pyinstaller --onefile --windowed --icon=NONE --name "DoomCounter" main.py
 # The executable will be in the 'dist' folder
 ```
 
-
 I also include a prebuilt executable for ease of access.
+
+## 🚀 Running on System Startup
+
+### For Windows:
+
+#### Method 1: Using the Startup Folder (Easiest for current user)
+
+1. Press `Win + R` to open the Run dialog
+2. Type `shell:startup` and press `Enter`
+3. Create a shortcut to your `DoomCounter.exe` in this folder
+
+#### Method 2: Using Task Scheduler (More Robust & Flexible)
+
+1. Search for "Task Scheduler" in the Start menu
+2. In the right-hand "Actions" pane, click "Create Basic Task..."
+3. Follow the wizard to create a task that runs `DoomCounter.exe` on startup
+
+### For macOS:
+
+1. Go to `System Settings` > `General` > `Login Items`
+2. Click the `+` button and select the `DoomCounter` app
+
+### For Linux:
+
+#### Using systemd (Recommended for most Linux distributions):
+
+1. Create a service file at `~/.config/systemd/user/doomcounter.service`:
+   ```ini
+   [Unit]
+   Description=Doom Counter Application
+   After=graphical.target
+
+   [Service]
+   ExecStart=/path/to/DoomCounter
+   Restart=always
+   
+   [Install]
+   WantedBy=default.target
+   ```
+
+2. Enable and start the service:
+   ```bash
+   systemctl --user enable --now doomcounter.service
+   ```
+
+## 🔍 Troubleshooting
+
+- **Application doesn't start or crashes:**
+  - Ensure all dependencies are installed
+  - Check that the executable has proper permissions
+  - Run from command line to see any error messages
+
+- **Window is not always on top:**
+  - Some window managers might override the 'always on top' setting
+  - Try running as administrator (Windows) or with sudo (Linux/macOS)
+
 ## 🛠️ Customization
 
 You can customize the appearance by modifying these variables in `main.py`:
