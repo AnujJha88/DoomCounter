@@ -3,6 +3,9 @@ from datetime import datetime, timedelta
 import os
 from tkinter import messagebox
 import math
+import pystray  # For system tray icon
+from PIL import Image, ImageDraw, ImageFont
+import threading
 
 class FlippingLabel(ctk.CTkFrame):
     """
@@ -145,8 +148,13 @@ class DoomCounter(ctk.CTk):
         
         # Configure window
         self.title("Doom Counter")
-        self.attributes("-topmost", True) # Keep window on top
-        self.overrideredirect(True) # Remove window decorations (title bar, borders)
+        self.attributes("-topmost", True)  # Keep window on top
+        self.overrideredirect(True)  # Remove window decorations (title bar, borders)
+        
+        # Window state
+        self.is_hidden = False
+        self.normal_geometry = "500x300+100+100"  # Store the normal window size
+        self.hidden_geometry = "200x50+100+100"   # Store the minimized window size
         
         # Set theme and colors
         ctk.set_appearance_mode("dark")
@@ -160,16 +168,61 @@ class DoomCounter(ctk.CTk):
         self.button_bg = "#2b2b2b"
         
         # Configure window background color
-        self.geometry("500x300+100+100")
+        self.geometry(self.normal_geometry)
         self.configure(fg_color=self.bg_color)
+        
+        # Create minimized frame (initially hidden)
+        self.minimized_frame = ctk.CTkFrame(self, fg_color=self.accent_color, width=200, height=50)
+        self.minimized_frame.pack_propagate(False)
+        
+        # Container for minimized content
+        self.minimized_content = ctk.CTkFrame(self.minimized_frame, fg_color="transparent")
+        self.minimized_content.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Left side - Title
+        self.minimized_title = ctk.CTkLabel(
+            self.minimized_content, 
+            text="DOOM:",
+            text_color=self.text_color,
+            font=('Arial', 12, 'bold'),
+            anchor='w'
+        )
+        self.minimized_title.pack(side='left', padx=(5,0))
+        
+        # Middle - Countdown display
+        self.minimized_time = ctk.CTkLabel(
+            self.minimized_content,
+            text="00d 00:00:00",
+            text_color=self.text_color,
+            font=('Consolas', 12, 'bold'),
+            width=120
+        )
+        self.minimized_time.pack(side='left', padx=5, fill='x', expand=True)
+        
+        # Right side - Restore button
+        self.restore_btn = ctk.CTkButton(
+            self.minimized_content,
+            text="RESTORE",
+            command=self.toggle_hide_show,
+            fg_color="#2b2b2b",  # Dark gray background
+            hover_color="#3a3a3a",  # Slightly lighter on hover
+            text_color="#ffffff",  # White text
+            border_color="#4a4a4a",  # Border color
+            border_width=1,  # Thin border
+            width=70,
+            height=28,  # Slightly smaller height
+            corner_radius=4,  # Slightly rounded corners
+            font=('Arial', 9, 'bold')
+        )
+        self.restore_btn.pack(side='right', padx=(0,5), pady=2)
+        
+        # Main container frame (for normal view)
+        self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_frame.pack(fill='both', expand=True, padx=20, pady=15)
         
         # Load or set doom date
         self.doom_date_str = "2025-06-01 00:00:00" # Default doom date
         self.load_or_set_doom_date()
-        
-        # Main container frame
-        self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.main_frame.pack(fill='both', expand=True, padx=20, pady=15)
         
         # Date display frame
         self.date_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -268,45 +321,10 @@ class DoomCounter(ctk.CTk):
         )
         self.close_btn.pack(side='right')
         
-        # State management for hide/show
-        self.is_hidden = False
-        self.is_paused = False # Not currently used in the provided code, but kept for future expansion
-        self.paused_time = None # Not currently used
-        self.normal_geometry = self.geometry() # Store normal window size and position
-        # Position the hidden window in the top right corner of the screen
-        self.hidden_geometry = f"200x50+{self.winfo_screenwidth()-210}+10" 
-        
-        # Hidden frame (for minimized state)
-        self.hidden_frame = ctk.CTkFrame(self, fg_color=self.accent_color, height=50)
-        
-        # Content for the hidden frame
-        self.hidden_label = ctk.CTkLabel(
-            self.hidden_frame,
-            text="DOOM COUNTER (DOUBLE CLICK TO RESTORE)",
-            text_color=self.text_color,
-            font=('Arial', 10, 'bold')
-        )
-        self.hidden_label.pack(side='left', padx=20, fill='both', expand=True)
-        
-        self.restore_btn = ctk.CTkButton(
-            self.hidden_frame,
-            text="RESTORE",
-            command=self.show_widget,
-            fg_color="transparent",
-            hover_color="#cc0000",
-            text_color=self.text_color,
-            width=80,
-            height=30,
-            corner_radius=5,
-            font=('Arial', 10, 'bold')
-        )
-        self.restore_btn.pack(side='right', padx=10)
-        
         # Event bindings for dragging and closing
         self.bind("<Escape>", lambda e: self.destroy()) # Close on Escape key
         self.bind("<ButtonPress-1>", self.on_press_drag) # Start drag on left mouse button press
         self.bind("<B1-Motion>", self.on_drag) # Continue drag on mouse motion with left button held
-        self.hidden_frame.bind("<Double-Button-1>", self.show_widget) # Double click hidden frame to restore
         
         # Start the countdown update loop
         self.update_countdown()
@@ -427,48 +445,50 @@ class DoomCounter(ctk.CTk):
             messagebox.showerror("Error", "Invalid date/time format.\nPlease use YYYY-MM-DD HH:MM:SS\nExample: 2025-12-25 23:59:59")
     
     def toggle_hide_show(self, event=None):
-        """Toggles between the normal and minimized (hidden) states of the window."""
+        """Toggle between showing and hiding the window"""
         if self.is_hidden:
-            self.show_widget()
+            # Restore the window
+            self.overrideredirect(True)
+            self.main_frame.pack(fill='both', expand=True, padx=20, pady=15)
+            self.minimized_frame.pack_forget()
+            self.geometry(self.normal_geometry)
+            self.is_hidden = False
         else:
-            self.hide_widget()
-    
-    def show_widget(self, event=None):
-        """Restores the window to its normal (non-minimized) state."""
-        # Hide the hidden frame
-        self.hidden_frame.pack_forget()
-        # Show the main interface
-        self.main_frame.pack(fill='both', expand=True, padx=20, pady=15)
-        self.geometry(self.normal_geometry) # Restore previous geometry
-        self.is_hidden = False
-        self.update_display() # Update display after showing
-    
-    def hide_widget(self, event=None):
-        """Minimizes the window to a small, hidden state."""
-        if not self.is_hidden:
-            self.normal_geometry = self.geometry() # Save current geometry before hiding
-            self.main_frame.pack_forget() # Hide the main frame
-        
-        # Show the hidden frame
-        self.hidden_frame.pack(fill='x')
-        self.geometry(self.hidden_geometry) # Set to hidden geometry
-        self.is_hidden = True
-        self.lift() # Bring to front
-        self.attributes("-topmost", True) # Ensure it stays on top
-    
+            # Save current position and minimize
+            x, y = self.winfo_x(), self.winfo_y()
+            self.normal_geometry = self.geometry()  # Save current size/position
+            self.hidden_geometry = f"200x50+{x}+{y}"
+            
+            # Show minimized frame
+            self.main_frame.pack_forget()
+            self.minimized_frame.pack(fill='both', expand=True)
+            self.overrideredirect(False)  # Show title bar when minimized
+            self.geometry(self.hidden_geometry)
+            self.is_hidden = True
+            self.lift()
+            
     def update_display(self):
         """
         Calculates the time left and updates the flipping labels.
         """
-        # Pause functionality is not fully implemented in this version,
-        # but the check is kept for consistency.
-        if self.is_paused:
-            # If paused, you might want to change colors or stop updates
-            return
-        
         try:
             now = datetime.now()
             time_left = self.doom_date - now
+            
+            # Format time left as days, hours, minutes, seconds
+            if time_left.total_seconds() <= 0:
+                time_str = "DOOMSDAY!"
+            else:
+                days = time_left.days
+                seconds = time_left.seconds
+                hours = seconds // 3600
+                minutes = (seconds % 3600) // 60
+                seconds = seconds % 60
+                time_str = f"{days:02d}d {hours:02d}:{minutes:02d}:{seconds:02d}"
+            
+            # Update minimized window display
+            if self.is_hidden:
+                self.minimized_time.configure(text=time_str)
             
             # If countdown is over
             if time_left.total_seconds() <= 0:
@@ -493,43 +513,11 @@ class DoomCounter(ctk.CTk):
         except Exception as e:
             print(f"Error updating display: {e}")
     
-    def toggle_pause(self):
-        """Toggles the pause state of the countdown (not fully implemented)."""
-        # This function is currently not connected to any button or event
-        # but provides a placeholder for pause/resume logic.
-        if self.is_paused:
-            if self.paused_time:
-                paused_duration = datetime.now() - self.paused_time
-                self.doom_date += paused_duration
-                self.paused_time = None
-            self.is_paused = False
-            self.update_countdown()
-        else:
-            self.paused_time = datetime.now()
-            self.is_paused = True
-        self.update_display()
-    
-    def get_countdown_text(self):
-        """Returns the countdown text in a string format (not used for display, but for debugging)."""
-        now = datetime.now()
-        time_left = self.doom_date - now
-        
-        if time_left.total_seconds() <= 0:
-            return "DOOMSDAY!"
-        else:
-            days = time_left.days
-            seconds_remaining = int(time_left.total_seconds()) % (24 * 3600)
-            hours = seconds_remaining // 3600
-            minutes = (seconds_remaining % 3600) // 60
-            seconds = seconds_remaining % 60
-            return f"{days:02}d {hours:02}h {minutes:02}m {seconds:02}s"
-    
     def update_countdown(self):
         """
         Schedules the update_display function to run every second.
         """
-        if not self.is_paused and not self.is_hidden:
-            self.update_display()
+        self.update_display()
         self.after(1000, self.update_countdown) # Call itself after 1 second
     
     def on_press_drag(self, event):
